@@ -430,6 +430,28 @@ CREDITOS = {
 # HTTP
 # ============================================================
 
+class Servidor(ThreadingHTTPServer):
+    """
+    O ThreadingHTTPServer da biblioteca padrao imprime um traceback inteiro
+    quando o cliente some no meio de uma resposta, e com SSE isso acontece o
+    tempo todo: fechar a aba, o iPad dormir, o Wi-Fi oscilar. Nao e defeito,
+    e o caminho normal de saida, mas na janela do servidor parece pane e
+    assusta quem esta so tentando usar a tela.
+
+    Entao queda de conexao morre calada. Qualquer outro erro continua
+    aparecendo, que esse a gente quer ver.
+    """
+
+    QUEDAS = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError,
+              TimeoutError)
+
+    def handle_error(self, request, client_address):
+        tipo = sys.exc_info()[0]
+        if tipo is not None and issubclass(tipo, self.QUEDAS):
+            return
+        super().handle_error(request, client_address)
+
+
 class Manipulador(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
@@ -584,7 +606,7 @@ def main():
 
     vigia = Vigia(opcoes.robo) if opcoes.robo else None
 
-    servidor = ThreadingHTTPServer((opcoes.host, opcoes.porta), Manipulador)
+    servidor = Servidor((opcoes.host, opcoes.porta), Manipulador)
     servidor.daemon_threads = True
     servidor.estado = Estado(vigia)
     servidor.malhas = empacotar_malhas()

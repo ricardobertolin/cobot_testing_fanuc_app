@@ -1,0 +1,5 @@
+# Os iniciadores vao do jeito que estao, sem o git trocar fim de linha:
+# o .bat precisa de CRLF (o cmd tropeca em goto com LF sozinho) e o .sh
+# precisa de LF (com CRLF o bash reclama de "\r" no shebang).
+*.bat -text
+*.sh  -text

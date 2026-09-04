@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FANUC LR Mate 200iC — pendant e digital twin</title>
+<!--
+  Porta de entrada do GitHub Pages.
+
+  Sem um index.html na raiz o Pages serve o README e a interface nunca
+  aparece. Mas mandar direto para web/pendant_dt.html tambem nao resolve:
+  aquela pagina e cliente burro, pede /config.json, /estado e /malha/N.bin
+  ao servidor_fanuc.py. Servida daqui, sem o Python no ar, ela abre e para
+  na primeira requisicao.
+
+  Entao esta pagina existe para resolver o passo que falta, e o caminho
+  principal e um arquivo so: o iniciar.bat baixa o projeto, resolve o
+  numpy, sobe o servidor e abre a tela. O passo a passo na mao fica
+  guardado no <details>, para quem quiser ver o que o script faz.
+-->
+<style>
+:root{--fundo:#111318;--painel:#1a1d24;--borda:#2b303a;--texto:#e8e8e8;
+      --fraco:#9aa3ad;--destaque:#f0c419}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--texto);
+     font:16px/1.65 -apple-system,"Segoe UI",system-ui,sans-serif}
+main{max-width:44rem;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+h1{font-size:1.6rem;line-height:1.25;margin:0 0 .25rem}
+.sub{color:var(--fraco);margin:0 0 2rem}
+.aviso{background:var(--painel);border:1px solid var(--borda);
+       border-left:3px solid var(--destaque);border-radius:6px;
+       padding:1rem 1.15rem;margin:0 0 2rem}
+.aviso p{margin:0}
+h2{font-size:1.05rem;margin:2.25rem 0 .75rem;color:var(--fraco);
+   text-transform:uppercase;letter-spacing:.08em}
+h3{font-size:1rem;margin:1.5rem 0 .5rem}
+ol{margin:0;padding-left:1.4rem}
+ol li{margin-bottom:1.1rem}
+code{font-family:"SF Mono",Consolas,ui-monospace,monospace;font-size:.95em}
+.cmd{display:flex;align-items:center;gap:.5rem;background:#0c0e12;
+     border:1px solid var(--borda);border-radius:6px;
+     padding:.6rem .75rem;margin:.5rem 0}
+.cmd code{flex:1;color:#8fd0ff;overflow-x:auto;white-space:nowrap}
+.cmd button{background:transparent;border:1px solid var(--borda);color:var(--fraco);
+     border-radius:4px;padding:.25rem .55rem;font-size:.8rem;cursor:pointer}
+.cmd button:hover{color:var(--texto);border-color:var(--fraco)}
+a{color:var(--destaque)}
+.botao{display:inline-block;background:var(--destaque);color:#111;
+       font-weight:600;text-decoration:none;padding:.85rem 1.4rem;
+       border-radius:6px;font-size:1.05rem}
+.botao.vazio{background:transparent;color:var(--texto);
+       border:1px solid var(--borda);font-weight:400;font-size:.95rem}
+.acoes{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin:.5rem 0 .75rem}
+.nota{color:var(--fraco);font-size:.9rem}
+details{margin-top:1rem;border-top:1px solid var(--borda);padding-top:1rem}
+summary{cursor:pointer;color:var(--fraco)}
+details[open] summary{margin-bottom:1rem}
+footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--borda);
+       color:var(--fraco);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+
+<h1>FANUC LR Mate 200iC</h1>
+<p class="sub">Pendant e digital twin no navegador.</p>
+
+<div class="aviso">
+<p><b>Esta página é só a vitrine.</b> A interface funciona junto com um
+programa em Python que roda no <b>seu</b> computador: é ele que faz a
+cinemática, guarda a pose do robô e entrega o modelo 3D. Sem ele no ar a tela
+abre e trava. O arquivo abaixo resolve isso sozinho.</p>
+</div>
+
+<h2>Windows — dois cliques</h2>
+<p class="acoes">
+<a class="botao" href="iniciar.bat" download>Baixar o iniciar.bat</a>
+</p>
+<p>Baixe e dê dois cliques nele, na própria pasta de Downloads. Ele procura o
+Python, baixa o projeto, instala o que falta, sobe o servidor e abre a tela.
+Deixe a janela preta aberta enquanto estiver usando.</p>
+<p class="nota">O Windows pode avisar que o arquivo veio da internet: clique em
+<b>Mais informações</b> e depois em <b>Executar assim mesmo</b>. Se não tiver
+Python instalado, ele abre a página de download e avisa o que fazer.</p>
+
+<h2>macOS e Linux</h2>
+<p class="acoes">
+<a class="botao vazio" href="iniciar.sh" download>Baixar o iniciar.sh</a>
+</p>
+<p>Depois, no Terminal:</p>
+<div class="cmd"><code>bash ~/Downloads/iniciar.sh</code>
+<button type="button" data-copiar>copiar</button></div>
+
+<h2>Já rodou o iniciador?</h2>
+<p class="acoes">
+<a class="botao" href="http://localhost:8081/pendant_dt">Abrir o simulador</a>
+<span class="nota">→ <code>http://localhost:8081/pendant_dt</code></span>
+</p>
+<p class="nota">Se der erro de conexão, o servidor não está no ar. Para abrir no
+celular ou no iPad da mesma rede, use o endereço que o servidor imprime no
+terminal, algo como <code>http://192.168.0.10:8081/pendant_dt</code>.</p>
+
+<details>
+<summary>Prefere fazer na mão? São quatro passos.</summary>
+
+<ol>
+<li><b>Instale o Python 3.</b>
+<a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org/downloads</a>.
+No Windows, marque <b>Add Python to PATH</b> na primeira tela do instalador.</li>
+
+<li><b>Baixe o projeto</b> e descompacte:
+<a href="https://github.com/ricardobertolin/cobot_testing_fanuc_app/archive/refs/heads/main.zip">ZIP do repositório</a>.</li>
+
+<li><b>Abra o terminal dentro da pasta</b> e rode as duas linhas:
+<div class="cmd"><code>pip install numpy</code>
+<button type="button" data-copiar>copiar</button></div>
+<div class="cmd"><code>python servidor_fanuc.py</code>
+<button type="button" data-copiar>copiar</button></div>
+<span class="nota">No macOS e no Linux, <code>python3</code> e <code>pip3</code>.
+Para encerrar, <code>Ctrl+C</code>.</span></li>
+
+<li><b>Abra</b> <code>http://localhost:8081/pendant_dt</code> no navegador.</li>
+</ol>
+</details>
+
+<footer>
+<p>Outras telas, com o servidor no ar:
+<a href="http://localhost:8081/pendant">só o pendant</a> ·
+<a href="http://localhost:8081/twin">só o 3D</a></p>
+<p>Código, README e licença em
+<a href="https://github.com/ricardobertolin/cobot_testing_fanuc_app">github.com/ricardobertolin/cobot_testing_fanuc_app</a>.</p>
+</footer>
+
+</main>
+
+<script>
+// Copiar comando. Sem clipboard API (http, navegador antigo) cai para
+// selecionar o texto, que ainda deixa o aluno usar Ctrl+C.
+document.querySelectorAll("[data-copiar]").forEach(botao => {
+  botao.addEventListener("click", () => {
+    const texto = botao.parentElement.querySelector("code").textContent;
+    const feito = () => {
+      botao.textContent = "copiado";
+      setTimeout(() => { botao.textContent = "copiar"; }, 1500);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(texto).then(feito, () => selecionar(botao));
+    } else {
+      selecionar(botao);
+    }
+  });
+});
+
+function selecionar(botao){
+  const faixa = document.createRange();
+  faixa.selectNodeContents(botao.parentElement.querySelector("code"));
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(faixa);
+}
+</script>
+</body>
+</html>
