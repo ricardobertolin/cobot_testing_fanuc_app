@@ -9,6 +9,33 @@ Robô do laboratório com controlador R-30iA Mate. Alcance 704 mm, 6 eixos,
 5 kg de carga. Não é colaborativo: não tem detecção de contato e não para
 sozinho se a ferramenta encostar.
 
+## Abrir sem instalar nada
+
+Em
+[ricardobertolin.github.io/cobot_testing_fanuc_app](https://ricardobertolin.github.io/cobot_testing_fanuc_app/)
+o primeiro botão abre o `pendant_dt` direto no navegador, sem Python, sem
+download e sem digitar endereço nenhum. É o caminho do iPad: Safari,
+Compartilhar → Adicionar à Tela de Início, e vira um app em tela cheia.
+
+Nesse modo a cinemática roda no próprio navegador, no `web/local.js`, e as
+malhas vêm de `web/malha/N.bin`, arquivos parados de 0,55 MB no total. A
+página é a mesma: ela tenta o `/config.json` do servidor e, quando não há
+Python do outro lado, cai para o motor local sozinha. O `?local=1` na URL
+força esse caminho mesmo com o servidor no ar, que é como se testa.
+
+O acoplamento J2-J3 vai junto, e é o que faz a tela concordar com o robô de
+verdade: jogar J2 ali não muda o valor de J3 nem inclina o antebraço.
+
+O que esse modo perde é o `--robo`, que vigia se o controlador responde na
+rede — navegador não abre socket cru. A pose já era simulada nos dois casos:
+o R-30iA não publica posição.
+
+Duas cópias da cinemática é uma dívida conhecida, e está anotada no cabeçalho
+do `local.js`: navegador não roda numpy. O que a mantém honesta é o formato
+idêntico — o estado que sai do `local.js` tem os mesmos campos, nas mesmas
+unidades, do que sai do `instantaneo()` do Python, e o `preparar_web.py`
+regera os `.bin` do mesmo cache que o servidor serve.
+
 ## Rodar
 
 Quem só quer usar, sem mexer em terminal: em
@@ -50,7 +77,10 @@ TOOL é o contrário.
 | `modelo_fanuc.py` | Cinemática por produto de exponenciais e as malhas do CAD. Roda sozinho como autoteste das cotas. |
 | `pendant_fanuc.py` | O pendant de desktop, de onde o servidor tira as constantes de jog, os overrides e as poses guardadas. Importar não abre janela: a janela só nasce no `main()` dele. |
 | `preparar_cad_step.py` | Regera o cache de malhas a partir de um STEP de montagem, articulando o braço até a pose zero. Só é preciso se você quiser refazer as malhas. |
+| `preparar_web.py` | Escreve o cache de malhas como `web/malha/N.bin`, que é o que o modo navegador consome. Rode de novo se o cache mudar. |
 | `web/` | As páginas: `pendant.html`, `twin.html` e `pendant_dt.html`. Sem framework e sem CDN. |
+| `web/local.js` | O servidor traduzido para dentro da página: cadeia, acoplamento J2-J3, jacobiano, jog e config. Só é baixado quando não há Python do outro lado. |
+| `web/malha/` | As malhas prontas para o modo navegador, 0,55 MB. Saem do `preparar_web.py` e vão versionadas: sem elas o GitHub Pages abre a tela sem robô. |
 | `malhas/` | O cache de malhas já gerado, uns 0,5 MB. Vai versionado aqui de propósito, para o repositório abrir e rodar sem o CAD original por perto. |
 
 ## Dependências

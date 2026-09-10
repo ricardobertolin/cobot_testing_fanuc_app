@@ -20,6 +20,21 @@
   transformacoes ja prontas para as matrizes de modelo do WebGL. Todo o
   calculo fica no Python.
 
+  DOIS LUGARES DE ONDE O ESTADO PODE VIR
+
+  Com o servidor_ur5.py no ar, e ele: config, SSE e malha, como sempre foi,
+  e e o unico modo que fala com robo de verdade.
+
+  Sem servidor - o iPad de quem abriu a pagina no GitHub Pages - a mesma
+  conta roda no proprio navegador, no local.js, e a malha vem de
+  web/malha/N.bin, arquivo parado. Nada aqui embaixo muda por causa disso:
+  o `ligacao` entrega config, estado e malha nos MESMOS formatos, e o resto
+  do arquivo nao sabe qual dos dois esta do outro lado. E simulacao pura, e
+  a pilula do canto diz isso.
+
+  A escolha e automatica: a pagina tenta o /config.json e, se nao houver
+  servidor ali, cai para o local. Nao ha nada para configurar.
+
   O mesmo arquivo serve o UR5 e o FANUC. O que muda vem do config.
 
   O 3D e WebGL2 puro, sem three.js e sem CDN nenhum, porque a pagina
@@ -82,7 +97,10 @@ header a,header button.link{color:#fff;background:none;text-decoration:none;
    acima de tudo: e a mesma escolha do pendant_real.py de desktop. */
 #aviso{background:#a00000;color:#fff;font-weight:700;text-align:center;
   padding:.5rem .8rem;font-size:.9rem;letter-spacing:.02em;flex:none;display:none}
-body.comanda #aviso{display:block}
+body.comanda #aviso,body.quebrou #aviso{display:block}
+/* Quando a pagina nao monta, o texto do erro precisa caber inteiro: e a
+   unica coisa que o usuario tem para contar o que aconteceu. */
+body.quebrou #aviso{white-space:pre-wrap;text-align:left;font-weight:400}
 
 #leds{display:flex;background:#141414;gap:2px;padding:2px;flex:none}
 #leds span{flex:1;text-align:center;padding:.3rem 0;font-size:.72rem;
@@ -177,8 +195,8 @@ footer{background:var(--painel);border-top:1px solid var(--borda);flex:none;
   <div class="direita">
     <span id="robo" title=""><i class="ponto"></i><span id="robo-rotulo">—</span></span>
     <span class="estado" id="estado"></span>
-    <a href="/pendant">pendant</a>
-    <a href="/twin">twin</a>
+    <a href="/pendant" data-servidor>pendant</a>
+    <a href="/twin" data-servidor>twin</a>
     <button class="link" id="botao-cheia" type="button">tela cheia</button>
   </div>
 </header>
@@ -224,6 +242,84 @@ const $ = (id) => document.getElementById(id);
 const PONTOS_RASTRO = 400;
 
 let cfg = null;
+let ligacao = null;
+
+// ============================================================
+// DE ONDE VEM O ESTADO
+// ============================================================
+//
+// Duas implementacoes do mesmo contrato:
+//
+//     cfg                 o config.json ja lido
+//     comandar(corpo)     canal de subida, um pedido de jog por vez
+//     malha(i)            URL do blob do elo i
+//     escutar(ok, falhou) abre o fluxo de estado
+//     parar()             fecha o fluxo e devolve a conexao
+//
+// Quem le daqui para baixo nao pergunta qual das duas esta ativa.
+
+function ligacaoServidor(cfg){
+  let fonte = null;
+  return {
+    cfg,
+    malha: (i) => `/malha/${i}.bin`,
+    comandar: (corpo) => fetch("/comando", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(corpo),
+    }),
+    escutar(ok, falhou){
+      if(fonte !== null) return;
+      fonte = new EventSource("/estado");
+      fonte.onmessage = (ev) => ok(JSON.parse(ev.data));
+      // O EventSource reconecta sozinho. Nao fechar aqui e o que faz a
+      // pagina voltar sozinha quando o Wi-Fi do iPad oscila.
+      fonte.onerror = falhou;
+    },
+    parar(){
+      if(fonte === null) return;
+      fonte.close();
+      fonte = null;
+    },
+  };
+}
+
+// O local.js so e baixado se for usado: com servidor no ar ele nem entra na
+// pagina, e ai nao ha duas cinematicas carregadas ao mesmo tempo.
+function carregarScript(url){
+  return new Promise((ok, falhou) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = ok;
+    s.onerror = () => falhou(new Error("nao consegui carregar " + url));
+    document.head.append(s);
+  });
+}
+
+async function abrirLigacao(){
+  const busca = new URLSearchParams(location.search);
+
+  // ?local=1 forca o modo navegador mesmo com servidor no ar, que e o jeito
+  // de testar este caminho sem desligar o Python.
+  if(!busca.has("local")){
+    try{
+      const resposta = await fetch("/config.json", {cache: "no-store"});
+      // Sem servidor isto e um 404 (ou o HTML de erro do Pages), e o .json()
+      // reclama. Os dois casos caem no catch e viram modo local.
+      if(resposta.ok) return ligacaoServidor(await resposta.json());
+    }catch(erro){ /* nao ha Python do outro lado */ }
+  }
+
+  await carregarScript("local.js");
+  const motor = criarLocal();
+  return {
+    cfg: await motor.config(),
+    malha: motor.malha,
+    comandar: motor.comandar,
+    escutar: (ok) => motor.escutar(ok),
+    parar: motor.parar,
+  };
+}
 
 // ============================================================
 // COMANDOS QUE SOBEM
@@ -239,11 +335,7 @@ let repetidor = null;
 
 async function comandar(corpo){
   try{
-    await fetch("/comando", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(corpo),
-    });
+    await ligacao.comandar(corpo);
   }catch(e){ /* servidor caiu: o SSE ja vai acusar */ }
 }
 
@@ -325,6 +417,13 @@ function montar(){
   document.title = cfg.robo + " - pendant DT";
   $("titulo").textContent = cfg.robo;
   if(cfg.aviso) $("aviso").textContent = cfg.aviso;
+
+  // No modo navegador nao ha /pendant nem /twin: aquelas duas paginas
+  // continuam sendo clientes burros do Python. Link que leva a 404 e pior
+  // que link ausente.
+  if(cfg.local){
+    document.querySelectorAll("[data-servidor]").forEach(a => a.remove());
+  }
 
   for(const nome of cfg.abas){
     const d = document.createElement("div");
@@ -653,7 +752,7 @@ async function buscarComPrazo(url, aoDemorar){
   try{
     return await fetch(url, {signal: controle.signal});
   }catch(erro){
-    if(erro.name === "AbortError") throw new Error(DIAGNOSTICO);
+    if(erro.name === "AbortError") throw new Error(diagnostico());
     throw erro;
   }finally{
     clearTimeout(aviso);
@@ -661,23 +760,29 @@ async function buscarComPrazo(url, aoDemorar){
   }
 }
 
-const DIAGNOSTICO =
-  "o download da malha nao completou. A causa mais comum e simples: o " +
-  "navegador so abre 6 conexoes por endereco, e cada aba aberta deste " +
-  "servidor segura uma delas para sempre (o fluxo de estado). Com 6 abas " +
-  "no ar, a setima nao consegue baixar nada. Feche as outras abas e " +
-  "recarregue.";
+// Sem servidor a malha e arquivo parado e nao ha fluxo de estado segurando
+// conexao, entao o diagnostico das 6 abas nao se aplica e mandaria o aluno
+// procurar defeito onde nao ha.
+const diagnostico = () => cfg.local
+  ? "o download da malha nao completou. Recarregue a pagina; se insistir, "
+  + "e a rede que esta cortando o arquivo no meio."
+  : "o download da malha nao completou. A causa mais comum e simples: o "
+  + "navegador so abre 6 conexoes por endereco, e cada aba aberta deste "
+  + "servidor segura uma delas para sempre (o fluxo de estado). Com 6 abas "
+  + "no ar, a setima nao consegue baixar nada. Feche as outras abas e "
+  + "recarregue.";
 
 async function carregar3d(){
   compilarProgramas();
 
   for(let i = 0; i < cfg.elos.length; i++){
-    const resposta = await buscarComPrazo(`/malha/${i}.bin`, () => {
+    const endereco = ligacao.malha(i);
+    const resposta = await buscarComPrazo(endereco, () => {
       $("carregando").textContent =
-        `malha ${i + 1}/${cfg.elos.length} demorando... ` + DIAGNOSTICO;
+        `malha ${i + 1}/${cfg.elos.length} demorando... ` + diagnostico();
     });
     if(!resposta.ok){
-      throw new Error(`/malha/${i}.bin respondeu ${resposta.status}`);
+      throw new Error(`${endereco} respondeu ${resposta.status}`);
     }
     const buf = await resposta.arrayBuffer();
     const cab = new Uint32Array(buf, 0, 2);
@@ -930,33 +1035,33 @@ function ativarGrupo(linhas, ativo){
   }
 }
 
-let fonte = null;
+let escutando = false;
 
 function escutar(){
-  if(fonte !== null) return;
-  fonte = new EventSource("/estado");
-  fonte.onmessage = (ev) => aplicar(JSON.parse(ev.data));
-  fonte.onerror = () => {
-    $("estado").textContent = "sem conexao";
-    $("mensagem").textContent = "sem conexao com o servidor, reconectando...";
-    $("mensagem").classList.add("alerta");
-    // Sem servidor nao ha como saber nada do robo. Deixar a pilula no
-    // ultimo valor conhecido seria mentir: ela diria CONECTADO com o
-    // Python morto.
-    aplicarRobo({nivel:"erro", rotulo:"SEM SERVIDOR",
-                 detalhe:"a pagina perdeu o Python. O estado do robo aqui "
-                       + "e desconhecido, nao 'igual ao de antes'."});
-    // O EventSource reconecta sozinho. Nao fechar aqui e o que faz a pagina
-    // voltar sozinha quando o Wi-Fi do iPad oscila. Solta o jog por
-    // seguranca: sem canal de subida nao da para garantir o "parar".
-    pararJog();
-  };
+  if(escutando) return;
+  escutando = true;
+  ligacao.escutar(aplicar, perdeuOServidor);
+}
+
+function perdeuOServidor(){
+  $("estado").textContent = "sem conexao";
+  $("mensagem").textContent = "sem conexao com o servidor, reconectando...";
+  $("mensagem").classList.add("alerta");
+  // Sem servidor nao ha como saber nada do robo. Deixar a pilula no
+  // ultimo valor conhecido seria mentir: ela diria CONECTADO com o
+  // Python morto.
+  aplicarRobo({nivel:"erro", rotulo:"SEM SERVIDOR",
+               detalhe:"a pagina perdeu o Python. O estado do robo aqui "
+                     + "e desconhecido, nao 'igual ao de antes'."});
+  // Solta o jog por seguranca: sem canal de subida nao da para garantir o
+  // "parar".
+  pararJog();
 }
 
 function parar_de_escutar(){
-  if(fonte === null) return;
-  fonte.close();
-  fonte = null;
+  if(!escutando) return;
+  escutando = false;
+  ligacao.parar();
 }
 
 // Aba escondida devolve a conexao.
@@ -1003,9 +1108,33 @@ if(!document.documentElement.requestFullscreen){
 // PARTIDA
 // ============================================================
 
+// Tela em branco e o pior defeito possivel, porque nao da nem para contar o
+// que houve: sem o montar(), o unico texto que sobra na tela e o "Jog" que
+// esta escrito no HTML. Entao qualquer coisa que impeca a montagem vira uma
+// tarja vermelha no topo, com o erro por extenso.
+function naoMontou(erro){
+  document.body.classList.add("quebrou");
+  $("aviso").textContent =
+    "a tela nao carregou: " + erro.message + "\n"
+    + "Se esta pagina veio do GitHub Pages, o mais provavel e cache: o "
+    + "Safari guardou a versao antiga. Abra de novo com ?local=1 no fim do "
+    + "endereco, ou limpe os dados do site.";
+  $("mensagem").textContent = "recarregue a pagina";
+  $("mensagem").classList.add("alerta");
+  $("carregando").textContent = "";
+}
+
 (async () => {
-  cfg = await (await fetch("/config.json")).json();
-  montar();
+  try{
+    ligacao = await abrirLigacao();
+    cfg = ligacao.cfg;
+    montar();
+  }catch(erro){
+    // Falhou ao decidir de onde vem o estado (sem servidor E sem o
+    // local.js), ou ao montar a tela a partir do config.
+    naoMontou(erro);
+    return;
+  }
 
   // AS MALHAS PRIMEIRO, O SSE DEPOIS. A ordem nao e estetica.
   //

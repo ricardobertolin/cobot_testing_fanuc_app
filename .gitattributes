@@ -3,3 +3,9 @@
 # precisa de LF (com CRLF o bash reclama de "\r" no shebang).
 *.bat -text
 *.sh  -text
+
+# As malhas do modo navegador sao binario cru (float32 e uint32). O git
+# adivinha isso sozinho, mas aqui esta escrito: uma conversao de fim de
+# linha nesses bytes trocaria coordenada de vertice por lixo.
+*.bin -text
+
