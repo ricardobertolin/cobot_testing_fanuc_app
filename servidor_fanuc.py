@@ -477,12 +477,15 @@ class Manipulador(BaseHTTPRequestHandler):
                         "application/json; charset=utf-8", codigo)
 
     def _pagina(self, arquivo):
+        self._arquivo_web(arquivo)
+
+    def _arquivo_web(self, arquivo, tipo="text/html; charset=utf-8"):
         caminho = os.path.join(PASTA_WEB, arquivo)
         if not os.path.exists(caminho):
-            self._responder(b"pagina ausente em web/", codigo=404)
+            self._responder(b"arquivo ausente em web/", codigo=404)
             return
         with open(caminho, "rb") as f:
-            self._responder(f.read())
+            self._responder(f.read(), tipo)
 
     # -------- rotas --------
 
@@ -499,6 +502,12 @@ class Manipulador(BaseHTTPRequestHandler):
             self._transmitir()
         elif rota.startswith("/malha/") and rota.endswith(".bin"):
             self._malha(rota)
+        elif rota == "/icone.png":
+            # O icone que o iOS usa ao adicionar a tela a Tela de Inicio. A
+            # pagina pede em caminho relativo, entao servida em /pendant_dt
+            # ele cai aqui. Sem esta rota o iPad inventa um icone com uma
+            # foto da propria tela.
+            self._arquivo_web("icone.png", "image/png")
         elif rota == "/favicon.ico":
             self._responder(b"", "image/x-icon", 204)
         else:

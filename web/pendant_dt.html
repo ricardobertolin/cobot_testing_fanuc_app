@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!--
+  Sem apple-touch-icon o iOS inventa o icone da Tela de Inicio: ele tira uma
+  foto da propria pagina e usa como se fosse desenho. Sai um retangulo
+  ilegivel, que e o "icone bugado". Com o link abaixo ele usa o PNG.
+
+  O nome vem do apple-mobile-web-app-title. Fica generico aqui porque este
+  arquivo serve o UR5 e o FANUC; o montar() troca pelo nome do robo assim
+  que o config chega, e e esse valor que o iOS le na hora de adicionar.
+-->
+<link rel="apple-touch-icon" sizes="180x180" href="icone.png">
+<link rel="icon" type="image/png" href="icone.png">
+<meta name="apple-mobile-web-app-title" content="Pendant DT">
 <title>Pendant DT</title>
 <!--
   Pendant e digital twin na MESMA pagina, versao browser.
@@ -176,6 +188,7 @@ footer{background:var(--painel);border-top:1px solid var(--borda);flex:none;
   padding-bottom:calc(.5rem + env(safe-area-inset-bottom))}
 #mensagem{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #mensagem.alerta{color:var(--alerta);font-weight:600}
+#versao{color:var(--fraco);font-size:.72rem;flex:none;opacity:.8}
 #creditos{color:var(--fraco);font-size:.75rem;text-align:right}
 
 #carregando{position:absolute;inset:0;display:grid;place-items:center;
@@ -232,6 +245,7 @@ footer{background:var(--painel);border-top:1px solid var(--borda);flex:none;
 
 <footer>
   <span id="mensagem"></span>
+  <span id="versao" class="mono"></span>
   <span id="creditos"></span>
 </footer>
 
@@ -240,6 +254,14 @@ footer{background:var(--painel);border-top:1px solid var(--borda);flex:none;
 
 const $ = (id) => document.getElementById(id);
 const PONTOS_RASTRO = 400;
+
+// Marca de versao, escrita na barra de baixo. Serve para uma coisa so, e
+// nao e vaidade: olhando a tela do iPad da para saber se o Safari esta
+// mostrando esta pagina ou uma copia velha guardada no cache, que e o
+// defeito que mais custou tempo aqui. O diagnostico.html compara este
+// numero com o que esta na rede. Suba ao mexer neste arquivo.
+const VERSAO = "3";
+document.getElementById("versao").textContent = "v" + VERSAO;
 
 let cfg = null;
 let ligacao = null;
@@ -416,6 +438,9 @@ function montar(){
   document.body.classList.toggle("comanda", !!cfg.comanda);
   document.title = cfg.robo + " - pendant DT";
   $("titulo").textContent = cfg.robo;
+  // O nome que o iOS oferece na hora de adicionar a Tela de Inicio.
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')
+    .setAttribute("content", cfg.robo);
   if(cfg.aviso) $("aviso").textContent = cfg.aviso;
 
   // No modo navegador nao ha /pendant nem /twin: aquelas duas paginas
@@ -1115,10 +1140,10 @@ if(!document.documentElement.requestFullscreen){
 function naoMontou(erro){
   document.body.classList.add("quebrou");
   $("aviso").textContent =
-    "a tela nao carregou: " + erro.message + "\n"
-    + "Se esta pagina veio do GitHub Pages, o mais provavel e cache: o "
-    + "Safari guardou a versao antiga. Abra de novo com ?local=1 no fim do "
-    + "endereco, ou limpe os dados do site.";
+    "a tela nao carregou (v" + VERSAO + "): " + erro.message + "\n"
+    + "Abra o diagnostico.html desta mesma pasta: ele diz em texto o que "
+    + "falhou. Se esta pagina veio do GitHub Pages, o suspeito numero um e "
+    + "cache: o Safari guardou a versao antiga.";
   $("mensagem").textContent = "recarregue a pagina";
   $("mensagem").classList.add("alerta");
   $("carregando").textContent = "";

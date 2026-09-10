@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Diagnóstico</title>
+<!--
+  A pagina que responde "por que a tela nao abriu no iPad".
+
+  Existe porque o defeito estava do lado de la: sem console, sem devtools e
+  sem eu ver a tela, "nao funciona" nao chega a ser informacao. Aqui cada
+  peca que o pendant_dt.html precisa e testada isolada, e o resultado sai em
+  texto grande, para ler ou fotografar.
+
+  A checagem que importa mais e a terceira: ela baixa o pendant_dt.html duas
+  vezes, uma aceitando o cache e outra obrigando a ir na rede, e compara a
+  VERSAO das duas. Se diferirem, o Safari esta servindo pagina velha, e
+  nenhuma outra investigacao interessa antes de resolver isso.
+
+  Sem dependencia nenhuma, como o resto do projeto.
+-->
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#0e1013;color:#e8e8e8;
+     font:16px/1.55 -apple-system,"Segoe UI",system-ui,sans-serif;
+     padding:1.2rem 1rem calc(2rem + env(safe-area-inset-bottom))}
+main{max-width:44rem;margin:0 auto}
+h1{font-size:1.3rem;margin:0 0 .2rem}
+.sub{color:#9aa3ad;margin:0 0 1.2rem;font-size:.92rem}
+.item{border:1px solid #2b303a;border-left-width:4px;border-radius:6px;
+      padding:.7rem .85rem;margin-bottom:.6rem;background:#161a21}
+.item.ok{border-left-color:#3ddc6b}
+.item.ruim{border-left-color:#ff5b5b}
+.item.espera{border-left-color:#5a6472}
+.item.aviso{border-left-color:#ffd24b}
+.nome{font-weight:600;font-size:.95rem}
+.detalhe{color:#9aa3ad;font-size:.85rem;margin-top:.25rem;
+         word-break:break-word;white-space:pre-wrap;
+         font-family:"SF Mono",Consolas,ui-monospace,monospace}
+.veredito{margin:1.2rem 0;padding:.9rem 1rem;border-radius:6px;
+          background:#1a1d24;border:1px solid #2b303a;font-size:.95rem}
+.veredito b{color:#8fd0ff}
+button{background:#8fd0ff;color:#111;border:0;border-radius:6px;
+       padding:.7rem 1.1rem;font-size:1rem;font-weight:600;
+       font-family:inherit;cursor:pointer}
+a{color:#8fd0ff}
+</style>
+</head>
+<body>
+<main>
+<h1>Diagnóstico</h1>
+<p class="sub">Testa, uma a uma, as peças que a tela do pendant precisa.
+Nada aqui muda nada: só lê.</p>
+
+<div id="lista"></div>
+
+<div class="veredito" id="veredito">rodando...</div>
+
+<p><button type="button" id="copiar">copiar o resultado</button>
+&nbsp; <a href="pendant_dt.html?local=1">abrir a tela</a></p>
+</main>
+
+<script>
+"use strict";
+
+const lista = document.getElementById("lista");
+const itens = [];
+
+function abrir(nome){
+  const div = document.createElement("div");
+  div.className = "item espera";
+  div.innerHTML = '<div class="nome"></div><div class="detalhe"></div>';
+  div.querySelector(".nome").textContent = nome;
+  div.querySelector(".detalhe").textContent = "testando...";
+  lista.append(div);
+  const registro = {nome, estado: "espera", detalhe: ""};
+  itens.push(registro);
+  return (estado, detalhe) => {
+    div.className = "item " + estado;
+    div.querySelector(".detalhe").textContent = detalhe;
+    registro.estado = estado;
+    registro.detalhe = detalhe;
+  };
+}
+
+const so = (erro) => erro && erro.message ? erro.message : String(erro);
+
+// ---------- as checagens ----------
+
+function ambiente(){
+  const fim = abrir("1. Onde estamos");
+  const app = window.navigator.standalone === true;
+  fim("ok",
+    "endereco: " + location.href
+    + "\nprotocolo: " + location.protocol
+    + "\ntela: " + screen.width + "x" + screen.height
+    + "  janela: " + innerWidth + "x" + innerHeight
+    + "\nmodo app (Tela de Inicio): " + (app ? "sim" : "nao")
+    + "\n" + navigator.userAgent);
+}
+
+async function versaoDaPagina(){
+  const fim = abrir("2. A pagina e a nova ou e cache velho?");
+  const pegar = async (modo) => {
+    const r = await fetch("pendant_dt.html", {cache: modo});
+    const t = await r.text();
+    const m = t.match(/const VERSAO = "([^"]*)"/);
+    if(m) return "v" + m[1];
+    // Sem a marca de versao so ha dois casos, e os dois interessam: ou e a
+    // pagina de antes do modo local, ou nao e o pendant_dt de jeito nenhum.
+    return t.includes("abrirLigacao")
+      ? "sem marca de versao (v1 ou v2)" : "antiga, sem o modo local";
+  };
+  try{
+    const doCache = await pegar("force-cache");
+    const daRede = await pegar("reload");
+    const texto = "no cache do navegador: " + doCache
+                + "\nno servidor agora:     " + daRede;
+    if(doCache === daRede) fim("ok", texto + "\nIguais: nao ha cache velho.");
+    else fim("ruim", texto
+      + "\nDIFERENTES. O Safari esta servindo pagina velha. Ajustes -> "
+      + "Safari -> Avancado -> Dados de Sites, apague este site; ou abra "
+      + "o endereco com ?local=1 no fim.");
+  }catch(erro){
+    fim("ruim", "nao consegui comparar: " + so(erro));
+  }
+}
+
+async function baixarLocalJs(){
+  const fim = abrir("3. O local.js (a cinematica) baixa?");
+  try{
+    const t0 = Date.now();
+    const r = await fetch("local.js", {cache: "reload"});
+    const texto = await r.text();
+    if(!r.ok) return fim("ruim", "HTTP " + r.status + " ao pedir local.js");
+    fim("ok", "HTTP 200, " + (texto.length / 1024).toFixed(1) + " kB em "
+             + (Date.now() - t0) + " ms");
+  }catch(erro){
+    fim("ruim", "nao baixou: " + so(erro));
+  }
+}
+
+function executarLocalJs(){
+  const fim = abrir("4. O local.js roda neste navegador?");
+  return new Promise((pronto) => {
+    const s = document.createElement("script");
+    s.src = "local.js?diagnostico=" + Date.now();
+    s.onload = () => {
+      if(typeof window.criarLocal === "function"){
+        fim("ok", "carregou e definiu criarLocal()");
+      }else{
+        fim("ruim", "carregou, mas criarLocal nao existe. Isso e sintoma de "
+                  + "erro de sintaxe: este navegador nao entendeu o arquivo.");
+      }
+      pronto();
+    };
+    s.onerror = () => { fim("ruim", "o navegador recusou o arquivo"); pronto(); };
+    document.head.append(s);
+  });
+}
+
+function motor(){
+  const fim = abrir("5. A cinematica produz numeros?");
+  return new Promise((pronto) => {
+    if(typeof window.criarLocal !== "function"){
+      fim("ruim", "sem criarLocal, nem da para tentar");
+      return pronto();
+    }
+    try{
+      const m = criarLocal();
+      m.config().then((cfg) => {
+        let visto = null;
+        m.escutar((e) => { visto = e; });
+        setTimeout(() => {
+          m.parar();
+          if(!visto){
+            fim("ruim", "o motor abriu mas nao mandou estado nenhum");
+          }else{
+            fim("ok", "robo: " + cfg.robo
+              + "\njuntas: " + visto.q.map(v => v.toFixed(1)).join(", ")
+              + "\nflange: " + visto.pose.slice(0, 3).map(v => v.toFixed(1)).join(", ")
+              + "\ncorpos: " + visto.corpos.length + " x " + visto.corpos[0].length);
+          }
+          pronto();
+        }, 400);
+      }, (erro) => { fim("ruim", "config falhou: " + so(erro)); pronto(); });
+    }catch(erro){
+      fim("ruim", "estourou: " + so(erro));
+      pronto();
+    }
+  });
+}
+
+function webgl(){
+  const fim = abrir("6. Este navegador tem WebGL2 (o 3D)?");
+  const tela = document.createElement("canvas");
+  const gl = tela.getContext("webgl2");
+  if(!gl){
+    return fim("aviso",
+      "sem WebGL2: o 3D fica de fora e os controles continuam valendo. "
+      + "No iPad, WebGL2 pede iPadOS 15 ou mais novo.");
+  }
+  const info = gl.getExtension("WEBGL_debug_renderer_info");
+  fim("ok", "sim"
+    + (info ? "\nplaca: " + gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "")
+    + "\ntextura maxima: " + gl.getParameter(gl.MAX_TEXTURE_SIZE));
+}
+
+async function malhas(){
+  const fim = abrir("7. As malhas do CAD baixam?");
+  const linhas = [];
+  let total = 0, ruim = false;
+  for(let i = 0; i < 7; i++){
+    const t0 = Date.now();
+    try{
+      const r = await fetch("malha/" + i + ".bin", {cache: "reload"});
+      const b = await r.arrayBuffer();
+      if(!r.ok){ linhas.push(i + ": HTTP " + r.status); ruim = true; continue; }
+      total += b.byteLength;
+      linhas.push(i + ": " + (b.byteLength / 1024).toFixed(0) + " kB em "
+                + (Date.now() - t0) + " ms");
+    }catch(erro){
+      linhas.push(i + ": " + so(erro));
+      ruim = true;
+    }
+  }
+  fim(ruim ? "ruim" : "ok",
+      linhas.join("\n") + "\ntotal: " + (total / 1e6).toFixed(2) + " MB");
+}
+
+// ---------- veredito ----------
+
+function concluir(){
+  const caixa = document.getElementById("veredito");
+  const ruins = itens.filter(i => i.estado === "ruim");
+  const cache = itens.find(i => i.nome.startsWith("2.") && i.estado === "ruim");
+
+  if(cache){
+    caixa.innerHTML = "<b>E cache.</b> O navegador esta com uma copia "
+      + "antiga da pagina. Limpe os dados deste site (ou abra com "
+      + "<code>?local=1</code>) e teste de novo. O resto so vale depois disso.";
+  }else if(!ruins.length){
+    caixa.innerHTML = "<b>Esta tudo de pe.</b> Se mesmo assim a tela nao "
+      + "abre, tire uma foto desta pagina inteira: o defeito e outro, e os "
+      + "numeros daqui apontam onde procurar.";
+  }else{
+    caixa.innerHTML = "<b>Falhou em: </b>"
+      + ruins.map(i => i.nome).join(", ")
+      + ". Tire uma foto desta pagina.";
+  }
+}
+
+document.getElementById("copiar").onclick = () => {
+  const texto = itens.map(i => "[" + i.estado + "] " + i.nome + "\n" + i.detalhe)
+                     .join("\n\n");
+  if(navigator.clipboard) navigator.clipboard.writeText(texto).then(() => {
+    document.getElementById("copiar").textContent = "copiado";
+  }, () => {});
+};
+
+(async () => {
+  ambiente();
+  await versaoDaPagina();
+  await baixarLocalJs();
+  await executarLocalJs();
+  await motor();
+  webgl();
+  await malhas();
+  concluir();
+})();
+</script>
+</body>
+</html>
