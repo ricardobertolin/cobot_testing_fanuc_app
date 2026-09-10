@@ -30,6 +30,29 @@ O que esse modo perde é o `--robo`, que vigia se o controlador responde na
 rede — navegador não abre socket cru. A pose já era simulada nos dois casos:
 o R-30iA não publica posição.
 
+### iPad velho: o robô vira silhueta
+
+WebGL2 só chegou ao iPad no iPadOS 15, e Pointer Events no 13. Num iPad
+anterior a isso — o de 2012, por exemplo — a tela abria e não desenhava o robô
+nem obedecia ao dedo. Agora as duas coisas caem para o que existe desde sempre:
+
+- **Sem WebGL2**, o robô é desenhado em Canvas 2D pelo `web/twin2d.js`. Cada
+  elo vira um polígono: o fecho convexo de 56 pontos do próprio CAD,
+  projetados com a mesma câmera. Sombra no chão, gradiente por peça e ordem do
+  pintor fazem o resto. São 9 kB (`web/silhueta.json`) contra 0,55 MB de malha.
+- **Sem Pointer Events**, as teclas de jog e a órbita da câmera usam Touch
+  Events, com o mouse como terceira opção.
+
+A silhueta é aproximada por construção: fecho convexo não tem buraco, então os
+recortes da torre e do punho fecham. A pose, o tamanho e a direção da
+ferramenta continuam exatos, porque saem das mesmas transformações — inclusive
+o acoplamento J2-J3.
+
+Se ainda assim a tela não abrir, `web/diagnostico.html` testa oito coisas e diz
+qual falhou. Ele é escrito em JavaScript de 2010 de propósito — `var`,
+`function`, `XMLHttpRequest` — porque um diagnóstico que não roda no aparelho
+com defeito não diagnostica nada.
+
 Duas cópias da cinemática é uma dívida conhecida, e está anotada no cabeçalho
 do `local.js`: navegador não roda numpy. O que a mantém honesta é o formato
 idêntico — o estado que sai do `local.js` tem os mesmos campos, nas mesmas
@@ -80,7 +103,10 @@ TOOL é o contrário.
 | `preparar_web.py` | Escreve o cache de malhas como `web/malha/N.bin`, que é o que o modo navegador consome. Rode de novo se o cache mudar. |
 | `web/` | As páginas: `pendant.html`, `twin.html` e `pendant_dt.html`. Sem framework e sem CDN. |
 | `web/local.js` | O servidor traduzido para dentro da página: cadeia, acoplamento J2-J3, jacobiano, jog e config. Só é baixado quando não há Python do outro lado. |
+| `web/twin2d.js` | O robô em Canvas 2D, para navegador sem WebGL2. Silhueta por fecho convexo, mesma câmera do 3D. Só é baixado quando falta WebGL2. |
+| `web/diagnostico.html` | Oito checagens que dizem por que a tela não abriu. Escrito em JavaScript antigo, para rodar até no iPad que não roda o resto. |
 | `web/malha/` | As malhas prontas para o modo navegador, 0,55 MB. Saem do `preparar_web.py` e vão versionadas: sem elas o GitHub Pages abre a tela sem robô. |
+| `web/silhueta.json` | 56 pontos por elo, 9 kB, para o modo 2D. Mesmo gerador das malhas. |
 | `malhas/` | O cache de malhas já gerado, uns 0,5 MB. Vai versionado aqui de propósito, para o repositório abrir e rodar sem o CAD original por perto. |
 
 ## Dependências

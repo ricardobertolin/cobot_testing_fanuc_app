@@ -502,6 +502,12 @@ class Manipulador(BaseHTTPRequestHandler):
             self._transmitir()
         elif rota.startswith("/malha/") and rota.endswith(".bin"):
             self._malha(rota)
+        elif rota == "/twin2d.js":
+            # O desenhista de Canvas 2D, que a pagina so busca quando o
+            # navegador nao tem WebGL2.
+            self._arquivo_web("twin2d.js", "application/javascript; charset=utf-8")
+        elif rota == "/silhueta.json":
+            self._arquivo_web("silhueta.json", "application/json; charset=utf-8")
         elif rota == "/icone.png":
             # O icone que o iOS usa ao adicionar a tela a Tela de Inicio. A
             # pagina pede em caminho relativo, entao servida em /pendant_dt

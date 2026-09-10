@@ -160,6 +160,8 @@ function oQueEsteSafariSabe(){
      tem: typeof window.PointerEvent === "function", desde: "iOS 13"},
     {nome: "WebGL2 (o robo em 3D)",
      tem: temWebGL2(), desde: "iOS 15"},
+    {nome: "Canvas 2D (o robo em silhueta, sem WebGL2)",
+     tem: temCanvas2d(), desde: "iOS 1"},
   ];
 
   var faltando = [];
@@ -173,22 +175,36 @@ function oQueEsteSafariSabe(){
 
   var estado = "ok";
   if(faltando.length){
-    // Sem async ou sem fetch a pagina nem comeca. Sem Pointer Events ela
-    // abre e nao obedece ao dedo. Sem WebGL2 so falta o 3D, e a propria
-    // pagina ja avisa e segue com os controles.
+    // Sem async ou sem fetch a pagina nem comeca: isso e grave. Faltar
+    // WebGL2 nao e: o robo cai para a silhueta 2D. E faltar Pointer Events
+    // tambem deixou de ser, desde que as teclas passaram a aceitar toque.
     var grave = false;
     for(var j = 0; j < faltando.length; j++){
-      if(faltando[j].nome.indexOf("WebGL2") === -1) grave = true;
+      var n = faltando[j].nome;
+      if(n.indexOf("WebGL2") === -1 && n.indexOf("Pointer") === -1) grave = true;
     }
     estado = grave ? "ruim" : "aviso";
   }
-  fim(estado, linhas.join("\n"));
+  fim(estado, linhas.join("\n")
+      + (faltando.length && estado === "aviso"
+         ? "\n\nNada aqui impede a tela de abrir: sem WebGL2 o robo vai "
+         + "para a silhueta 2D, e sem Pointer Events as teclas usam toque."
+         : ""));
 }
 
 function temWebGL2(){
   try{
     var c = document.createElement("canvas");
     return !!(c.getContext && c.getContext("webgl2"));
+  }catch(erro){
+    return false;
+  }
+}
+
+function temCanvas2d(){
+  try{
+    var c = document.createElement("canvas");
+    return !!(c.getContext && c.getContext("2d"));
   }catch(erro){
     return false;
   }
@@ -330,6 +346,34 @@ function malhas(seguir){
   proxima();
 }
 
+// ---------- 8. o desenho sem WebGL ----------
+
+function modo2d(seguir){
+  var fim = abrir("8. O robô em 2D (para iPad sem WebGL2) está de pé?");
+  if(!temCanvas2d()){
+    fim("ruim", "sem Canvas 2D nao ha desenho nenhum possivel");
+    return seguir();
+  }
+  pegar("silhueta.json?agora=" + (new Date()).getTime(), function(x, erro){
+    if(!x || x.status >= 400){
+      fim("ruim", "silhueta.json nao baixou: " + (erro || ("HTTP " + x.status)));
+      return seguir();
+    }
+    var dados;
+    try{
+      dados = JSON.parse(x.responseText);
+    }catch(e){
+      fim("ruim", "silhueta.json veio quebrado");
+      return seguir();
+    }
+    var pontos = dados.elos && dados.elos[0] ? dados.elos[0].pontos.length : 0;
+    fim("ok", "Canvas 2D presente"
+      + "\nsilhueta.json: " + dados.elos.length + " elos x " + pontos
+      + " pontos, " + Math.round(x.responseText.length / 1024) + " kB");
+    seguir();
+  });
+}
+
 // ---------- veredito ----------
 
 function concluir(){
@@ -372,7 +416,9 @@ versaoDaPagina(function(){
     executarLocalJs(function(){
       motor(function(){
         malhas(function(){
-          concluir();
+          modo2d(function(){
+            concluir();
+          });
         });
       });
     });

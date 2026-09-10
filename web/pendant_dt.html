@@ -260,7 +260,7 @@ const PONTOS_RASTRO = 400;
 // mostrando esta pagina ou uma copia velha guardada no cache, que e o
 // defeito que mais custou tempo aqui. O diagnostico.html compara este
 // numero com o que esta na rede. Suba ao mexer neste arquivo.
-const VERSAO = "3";
+const VERSAO = "4";
 document.getElementById("versao").textContent = "v" + VERSAO;
 
 let cfg = null;
@@ -375,22 +375,46 @@ function pararJog(){
   comandar({acao:"parar"});
 }
 
+// Pointer Events cobrem dedo, caneta e mouse com o mesmo codigo, e sao o
+// caminho bom. So que no iPad eles so existem a partir do iPadOS 13: num
+// aparelho anterior a tela monta inteira e nenhuma tecla responde ao dedo,
+// que e pior do que nao abrir. Entao, quando faltam, o codigo cai para
+// touch + mouse, que existem desde sempre.
+const TEM_PONTEIRO = typeof window.PointerEvent === "function";
+
 function tecla(texto, obterEixo, sinal){
   const b = document.createElement("button");
   b.className = "tecla";
   b.type = "button";
   b.textContent = texto;
-  // Pointer Events cobrem dedo, caneta e mouse com o mesmo codigo. O
-  // setPointerCapture garante o evento de soltar mesmo se o dedo escorregar
-  // para fora da tecla, que e justamente o caso em que o jog ficaria preso.
-  b.addEventListener("pointerdown", (ev) => {
+
+  const apertar = (ev) => {
     ev.preventDefault();
     if(b.disabled) return;
-    b.setPointerCapture(ev.pointerId);
+    // O setPointerCapture garante o evento de soltar mesmo se o dedo
+    // escorregar para fora da tecla, que e justamente o caso em que o jog
+    // ficaria preso. No touch isso vem de graca: o touchend vai para o
+    // elemento onde o toque COMECOU, mesmo que o dedo tenha saido dele.
+    if(TEM_PONTEIRO) b.setPointerCapture(ev.pointerId);
     iniciarJog(obterEixo(), sinal, b);
-  });
-  for(const evento of ["pointerup","pointercancel","lostpointercapture"]){
-    b.addEventListener(evento, pararJog);
+  };
+
+  if(TEM_PONTEIRO){
+    b.addEventListener("pointerdown", apertar);
+    for(const evento of ["pointerup","pointercancel","lostpointercapture"]){
+      b.addEventListener(evento, pararJog);
+    }
+  }else{
+    b.addEventListener("touchstart", apertar);
+    for(const evento of ["touchend","touchcancel"]){
+      b.addEventListener(evento, pararJog);
+    }
+    // O mouse fica para o navegador antigo de desktop. Com touch presente,
+    // o mousedown so chegaria depois do touchend, e ai o jog ja parou.
+    b.addEventListener("mousedown", apertar);
+    for(const evento of ["mouseup","mouseleave"]){
+      b.addEventListener(evento, pararJog);
+    }
   }
   return b;
 }
@@ -760,6 +784,10 @@ const modelos = Array.from({length:7}, () => new Float32Array(16));
 let grade = null, eixosBase = null, eixosTcp = null, rastro = null;
 let dadosRastro = null, rastroIniciado = false, pronto3d = false;
 
+// O desenhista de Canvas 2D, que so nasce quando nao ha WebGL2. Enquanto
+// for null, quem manda e o WebGL.
+let twin2d = null;
+
 function malhaGrade(tamanho, divisoes){
   const p = [], m = tamanho / 2, passo = tamanho / divisoes;
   for(let i = 0; i <= divisoes; i++){
@@ -844,26 +872,54 @@ async function carregar3d(){
   requestAnimationFrame(desenhar);
 }
 
+// ---------- o mesmo robo, sem WebGL ----------
+
+// A silhueta sao 9 kB contra 1,75 MB de malha, o que num iPad velho tambem
+// decide se abre. O twin2d.js le a MESMA camera e o MESMO estado: o resto
+// da pagina nao muda por causa dele.
+async function carregar2d(){
+  $("carregando").textContent = "sem WebGL2: desenhando o robo em 2D...";
+
+  await carregarScript(cfg.local ? "twin2d.js" : "/twin2d.js");
+  const resposta = await fetch(cfg.local ? "silhueta.json" : "/silhueta.json");
+  if(!resposta.ok) throw new Error("silhueta.json respondeu " + resposta.status);
+
+  camera.raio = cfg.camera.raio;
+  camera.azimute = cfg.camera.azimute;
+  camera.elevacao = cfg.camera.elevacao;
+  camera.alvo = cfg.camera.alvo.slice();
+
+  twin2d = criarTwin2d(tela, cfg, await resposta.json(), camera);
+  $("carregando").style.display = "none";
+  $("dica3d").textContent =
+    "silhueta em 2D (este navegador nao tem WebGL2) · arrastar gira";
+
+  const quadro = () => { twin2d.desenhar(); requestAnimationFrame(quadro); };
+  requestAnimationFrame(quadro);
+}
+
 // ---------- camera em orbita ----------
 
 const camera = {raio:2.5, azimute:-130, elevacao:22, alvo:[0,0,0.5]};
 const dedos = new Map();
 let distanciaInicial = 0, raioInicial = 0;
 
-tela.addEventListener("pointerdown", (ev) => {
-  tela.setPointerCapture(ev.pointerId);
-  dedos.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+// A orbita nao sabe de onde o toque veio: `desceu`, `moveu` e `subiu`
+// recebem um id e uma posicao, e Pointer Events ou Touch Events so mudam
+// quem os chama. Ver o TEM_PONTEIRO la em cima.
+function desceu(id, x, y){
+  dedos.set(id, {x, y});
   if(dedos.size === 2){
     distanciaInicial = separacao();
     raioInicial = camera.raio;
   }
-});
+}
 
-tela.addEventListener("pointermove", (ev) => {
-  const anterior = dedos.get(ev.pointerId);
+function moveu(id, x, y){
+  const anterior = dedos.get(id);
   if(!anterior) return;
-  const dx = ev.clientX - anterior.x, dy = ev.clientY - anterior.y;
-  dedos.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+  const dx = x - anterior.x, dy = y - anterior.y;
+  dedos.set(id, {x, y});
 
   if(dedos.size === 1){
     camera.azimute -= dx * 0.4;
@@ -871,10 +927,42 @@ tela.addEventListener("pointermove", (ev) => {
   }else if(dedos.size === 2 && distanciaInicial > 0){
     camera.raio = limitarRaio(raioInicial * distanciaInicial / separacao());
   }
-});
+}
 
-for(const evento of ["pointerup","pointercancel","lostpointercapture"]){
-  tela.addEventListener(evento, (ev) => dedos.delete(ev.pointerId));
+const subiu = (id) => dedos.delete(id);
+
+if(TEM_PONTEIRO){
+  tela.addEventListener("pointerdown", (ev) => {
+    tela.setPointerCapture(ev.pointerId);
+    desceu(ev.pointerId, ev.clientX, ev.clientY);
+  });
+  tela.addEventListener("pointermove",
+    (ev) => moveu(ev.pointerId, ev.clientX, ev.clientY));
+  for(const evento of ["pointerup","pointercancel","lostpointercapture"]){
+    tela.addEventListener(evento, (ev) => subiu(ev.pointerId));
+  }
+}else{
+  // O identifier do Touch faz o papel do pointerId, entao dois dedos
+  // continuam sendo dois dedos e o pinca continua funcionando.
+  tela.addEventListener("touchstart", (ev) => {
+    ev.preventDefault();
+    for(const t of ev.changedTouches) desceu(t.identifier, t.clientX, t.clientY);
+  }, {passive:false});
+  tela.addEventListener("touchmove", (ev) => {
+    ev.preventDefault();
+    for(const t of ev.changedTouches) moveu(t.identifier, t.clientX, t.clientY);
+  }, {passive:false});
+  for(const evento of ["touchend","touchcancel"]){
+    tela.addEventListener(evento, (ev) => {
+      for(const t of ev.changedTouches) subiu(t.identifier);
+    });
+  }
+  // Mouse de desktop antigo, com um "dedo" so.
+  tela.addEventListener("mousedown", (ev) => desceu("mouse", ev.clientX, ev.clientY));
+  tela.addEventListener("mousemove", (ev) => moveu("mouse", ev.clientX, ev.clientY));
+  for(const evento of ["mouseup","mouseleave"]){
+    tela.addEventListener(evento, () => subiu("mouse"));
+  }
 }
 
 tela.addEventListener("wheel", (ev) => {
@@ -882,7 +970,21 @@ tela.addEventListener("wheel", (ev) => {
   camera.raio = limitarRaio(camera.raio * Math.exp(ev.deltaY * 0.0012));
 }, {passive:false});
 
-tela.addEventListener("dblclick", () => { rastroIniciado = false; });
+tela.addEventListener("dblclick", limparRastro);
+
+// Duplo toque, para o iPad que nao emite dblclick de forma confiavel com o
+// touch-action desligado.
+let ultimoToque = 0;
+tela.addEventListener("touchend", () => {
+  const agora = Date.now();
+  if(agora - ultimoToque < 350) limparRastro();
+  ultimoToque = agora;
+});
+
+function limparRastro(){
+  rastroIniciado = false;
+  if(twin2d) twin2d.limparRastro();
+}
 
 function separacao(){
   const [a, b] = [...dedos.values()];
@@ -961,6 +1063,7 @@ function desenhar(){
 }
 
 function aplicar3d(e){
+  if(twin2d){ twin2d.aplicar(e); return; }
   if(!pronto3d) return;
 
   for(let i = 0; i < e.corpos.length; i++) paraModelo(e.corpos[i], modelos[i]);
@@ -1188,12 +1291,16 @@ function naoMontou(erro){
       $("carregando").textContent = "3D falhou: " + erro.message;
     }
   }else{
-    // Os controles funcionam mesmo sem 3D. Um iPad velho demais para
-    // WebGL2 ainda serve de tela de operacao, e e melhor dizer isso do que
-    // mostrar uma pagina em branco.
-    $("carregando").textContent =
-      "este navegador nao tem WebGL2, o 3D fica de fora. " +
-      "No iPad, iPadOS 15 ou mais novo. Os controles continuam valendo.";
+    // Sem WebGL2 (iPad anterior ao iPadOS 15) o robo vai para o Canvas 2D,
+    // que existe desde o primeiro iPad. Nao e o CAD: e a silhueta dele,
+    // sete poligonos com a mesma camera e a mesma pose. Ver o twin2d.js.
+    try{
+      await carregar2d();
+    }catch(erro){
+      $("carregando").textContent =
+        "este navegador nao tem WebGL2 e o desenho 2D tambem falhou ("
+        + erro.message + "). Os controles continuam valendo.";
+    }
   }
 
   escutar();
