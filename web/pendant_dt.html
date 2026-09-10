@@ -712,8 +712,13 @@ uniform vec4 uCor;
 out vec4 corSaida;
 void main(){ corSaida = uCor; }`);
 
-  const uni = (p, nomes) => Object.fromEntries(
-    nomes.map(n => [n, gl.getUniformLocation(p, n)]));
+  // Object.fromEntries so existe a partir do iOS 12.2, e nao vale um piso
+  // de aparelho: um laco de tres linhas faz o mesmo.
+  const uni = (p, nomes) => {
+    const saida = {};
+    for(const n of nomes) saida[n] = gl.getUniformLocation(p, n);
+    return saida;
+  };
   uMalha = uni(progMalha, ["uProj","uVista","uModelo","uCor"]);
   uLinha = uni(progLinha, ["uProj","uVista","uModelo","uCor"]);
 }

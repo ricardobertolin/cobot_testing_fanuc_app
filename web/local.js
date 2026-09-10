@@ -522,10 +522,13 @@ function criarLocal(){
     const c6 = corpos[6];
     const ponta = pontaDe(c6);
     // Colunas de (R6 @ FLANGE_R) sao os eixos da ferramenta no mundo, e e
-    // isso que o aplicar3d() da pagina espera ler.
-    const ferramenta = mul3(c6.R, FLANGE_R);
-    const eixosPonta = [0,1,2].flatMap(c => [ferramenta[c], ferramenta[3+c],
-                                             ferramenta[6+c]]);
+    // isso que o aplicar3d() da pagina espera ler. Ou seja: a transposta,
+    // escrita a mao. Era um flatMap, que so existe a partir do iOS 12 e
+    // custava a pagina inteira num iPad velho por tres linhas de ganho.
+    const f = mul3(c6.R, FLANGE_R);
+    const eixosPonta = [f[0], f[3], f[6],
+                        f[1], f[4], f[7],
+                        f[2], f[5], f[8]];
     const graus = q.map(v => v * 180 / Math.PI);
     const sigma = menorSigma(jacobiano(q));
     const movendo = est.jog !== null;
